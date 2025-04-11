@@ -88,12 +88,10 @@ apply_action_keeprows = |{start, end}, lines|
 
 handle_input! : List Str => Result {actions: List Action, lines: List Str} [StdinErr _, BadUtf8 _, InvalidAction Str]
 handle_input! = |args|
-
-    #_ = Stdout.line!("Received arguments: ${joined_args}")
-    input_str = read_utf8_input!({})?
     when parse_args(args) is
         Err(InvalidAction(err)) -> Err(InvalidAction(err))
-        Ok(actions) ->
+        Ok({actions, options}) ->
+            input_str = read_utf8_input!({})?
             lines = Str.split_on(input_str, "\n")
             Ok({actions, lines})
 
@@ -103,11 +101,21 @@ read_utf8_input! = |{}|
     Str.from_utf8(input)
 
 
-parse_args : List Str  -> Result (List Action) [InvalidAction Str]
+parse_args : List Str  -> Result ({actions: List Action, options: List Str}) [InvalidAction Str]
 parse_args = |args|
-    parsed_args = args |> List.split_on("-")
-    actions = parsed_args |> List.map(parse_action)
-    actions |> to_one_action_error
+    parsed_args = args |> List.split_on("-") |> dbg
+    {config_args, action_args} = when parsed_args is
+        [[e, ..], ..] if Str.starts_with(e, "--") -> {config_args: [], action_args: parsed_args |> List.drop_first 1}
+        _ -> {config_args: [], action_args: parsed_args}
+
+    actions = (action_args |> List.map(parse_action) |> to_one_action_error)?
+    Ok({actions: actions, options: []})
+
+get_head : List a -> Result {head: a, tail: List a} [ListWasEmpty]
+get_head = |list|
+    when list is
+        [] -> Err(ListWasEmpty)
+        [head, .. as tail] -> Ok({head, tail})
 
 
 to_one_action_error : List [ Ok Action, Err ([InvalidAction Str]) ] -> Result (List Action) [InvalidAction Str]

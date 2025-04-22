@@ -11,6 +11,7 @@ main! = |raw_args|
     when handle_input!(args) is
         Err(InvalidAction(msg)) -> Err(Exit(1, "Invalid action error: ${msg}"))
         Err(InvalidConfig(msg)) -> Err(Exit(1, "Invalid config error: ${msg}"))
+        Err(NoActionProvided) -> print_help!({})
         Err(_) -> Err(Exit(1, "Unhandled error"))
         Ok({ options, actions, lines }) ->
             if List.any(options, |o| o == PrintHelp) then
@@ -234,11 +235,12 @@ apply_action_keeprows = |{ start, end }, lines|
     dbg end_index
     lines |> List.sublist({ start: start_index |> Num.int_cast, len: end_index - start_index |> Num.int_cast })
 
-handle_input! : List Str => Result { options : List Config, actions : List Action, lines : List Str } [StdinErr _, BadUtf8 _, InvalidAction Str, InvalidConfig Str]
+handle_input! : List Str => Result { options : List Config, actions : List Action, lines : List Str } [StdinErr _, BadUtf8 _, InvalidAction Str, InvalidConfig Str, NoActionProvided]
 handle_input! = |args|
     when parse_args(args) is
         Err(InvalidAction(err)) -> Err(InvalidAction(err))
         Err(InvalidConfig(err)) -> Err(InvalidConfig(err))
+        Err(NoActionProvided) -> Err(NoActionProvided)
         Ok({ actions, options }) ->
             dbg options
             input_str = read_utf8_input!({})?
@@ -252,7 +254,7 @@ read_utf8_input! = |{}|
 
 Config : [StepDebug, PrintHelp]
 
-parse_args : List Str -> Result { actions : List Action, options : List Config } [InvalidAction Str, InvalidConfig Str]
+parse_args : List Str -> Result { actions : List Action, options : List Config } [InvalidAction Str, InvalidConfig Str, NoActionProvided]
 parse_args = |args|
     parsed_args = args |> List.split_on("-") |> dbg
     { config_args, action_args } =
@@ -264,9 +266,12 @@ parse_args = |args|
 
             _ -> { config_args: [], action_args: parsed_args }
 
-    maybe_actions = action_args |> List.map(parse_action) |> to_one_action_error
-    actions = maybe_actions |> Result.map_err(|InvalidAction e| InvalidAction e)?
-    Ok({ actions: actions, options: config_args })
+    when parsed_args is
+        [[]] -> Err NoActionProvided
+        _ ->
+            maybe_actions = action_args |> List.map(parse_action) |> to_one_action_error
+            actions = maybe_actions |> Result.map_err(|InvalidAction e| InvalidAction e)?
+            Ok({ actions: actions, options: config_args })
 
 parse_config_args : List Str -> Result (List Config) [InvalidConfig Str]
 parse_config_args = |args_str|

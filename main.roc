@@ -337,64 +337,50 @@ available_actions = [
     },
     {
         name: "keep-cols",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-cols"))
-                Ok(python_list_index) -> parse_python_list_index(python_list_index) |> Result.map_ok(|index| KeepCols index),
+        help: "Keep columns, see keep-rows for details",
+        parse_args: action_parser1(parse_python_list_index, KeepCols),
     },
-    { name: "trim", help: "", parse_args: |_| Ok(Trim) },
-    { name: "sort", help: "", parse_args: |_| Ok(Sort) },
-    { name: "uniq", help: "", parse_args: |_| Ok(Uniq) },
+    { name: "trim", help: "Remove whitespace to the left and right of each row", parse_args: |_| Ok(Trim) },
+    { name: "sort", help: "Sort the rows in the list", parse_args: |_| Ok(Sort) },
+    { name: "uniq", help: "Remove every duplicate consecutive item in the list", parse_args: |_| Ok(Uniq) },
     {
         name: "split",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for split"))
-                Ok(split_on) -> Ok(Split split_on),
+        help: "split <str>: For a row, split it on <str>, replacing each occurance with a space",
+        parse_args: action_parser1(Ok, Split),
     },
     {
         name: "grep",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for grep"))
-                Ok(grep) -> Ok(Grep grep),
+        help: "grep <filter>: Filter rows and include only those that include the literal <filter>",
+        parse_args: action_parser1(Ok, Grep),
     },
     {
         name: "strip-left",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-left"))
-                Ok(strip_str) -> Ok(StripLeft strip_str),
+        help: "strip-left <str>: Remove exactly <str> from the left of each row, if it's not present, nothing will be removed",
+        parse_args: action_parser1(Ok, StripLeft),
     },
     {
         name: "strip-right",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-right"))
-                Ok(strip_str) -> Ok(StripRight strip_str),
+        help: "strip-right <str>: See strip-left",
+        parse_args: action_parser1(Ok, StripRight),
     },
     {
         name: "col-append",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-append"))
-                Ok(append_str) -> Ok(ColAppend append_str),
+        help: "col-append <str>: Append <str> at the end of every row",
+        parse_args: action_parser1(Ok, ColAppend),
     },
     {
         name: "col-prepend",
-        help: "",
-        parse_args: |kw_args|
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-prepend"))
-                Ok(prepend_str) -> Ok(ColPrepend prepend_str),
+        help: "col-prepend <str>: Like col-append, but at the start of the row",
+        parse_args: action_parser1(Ok, ColPrepend),
     },
 ]
+
+action_parser1 : (Str -> Result a [InvalidAction Str]), (a -> Action) -> (List Str -> Result Action [InvalidAction Str])
+action_parser1 = |arg_transform, make_action|
+    |kw_args|
+        when kw_args |> List.first is
+            Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-cols"))
+            Ok(python_list_index) -> arg_transform(python_list_index) |> Result.map_ok(|index| make_action(index))
 
 parse_keep_rows : List Str -> Result Action [InvalidAction Str]
 parse_keep_rows = |args|

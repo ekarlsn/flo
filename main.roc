@@ -17,7 +17,7 @@ main! = |raw_args|
                 print_help!({})
             else
                 dbg options
-                { input, transformations } = List.walk_try(
+                { transformations } = List.walk_try(
                     actions,
                     { input: lines, transformations: [] },
                     |state, action|
@@ -163,7 +163,7 @@ string_compare = |a, b|
 
     result1 =
         List.map2(aBytes, bBytes, Pair)
-        |> List.walk_until(EQ, |state, Pair aa bb| if aa > bb then Break GT else if bb > aa then Break LT else Continue EQ)
+        |> List.walk_until(EQ, |_state, Pair aa bb| if aa > bb then Break GT else if bb > aa then Break LT else Continue EQ)
 
     if result1 == EQ then
         if List.len aBytes > List.len bBytes then
@@ -286,12 +286,6 @@ parse_config_args = |args_str|
 
         [] ->
             Ok([])
-
-get_head : List a -> Result { head : a, tail : List a } [ListWasEmpty]
-get_head = |list|
-    when list is
-        [] -> Err(ListWasEmpty)
-        [head, .. as tail] -> Ok({ head, tail })
 
 to_one_action_error : List [Ok Action, Err [InvalidAction Str]] -> Result (List Action) [InvalidAction Str]
 to_one_action_error = |actions|

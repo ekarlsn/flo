@@ -13,41 +13,58 @@ main! = |raw_args|
         Err(InvalidConfig(msg)) -> Err(Exit(1, "Invalid config error: ${msg}"))
         Err(_) -> Err(Exit(1, "Unhandled error"))
         Ok({ options, actions, lines }) ->
-            dbg options
-            { input, transformations } = List.walk_try(
-                actions,
-                { input: lines, transformations: [] },
-                |state, action|
-                    output = state.input |> apply_action(action)
-                    Ok(
-                        {
-                            input: output,
-                            transformations: state.transformations |> List.append(output),
-                        },
-                    ),
-            )?
-
-            output_text_blocks = List.map(transformations, |trans| Str.join_with(trans, "\n"))
-            action_and_text = List.map2(
-                actions,
-                output_text_blocks,
-                |action, text|
-                    action_text = action_to_text(action)
-                    "${action_text}:\n${text}",
-            )
-            input_text_block = Str.join_with(lines, "\n")
-            output_text = Str.join_with(action_and_text, "\n\nThen: ")
-
-            if List.any(options, |o| o == StepDebug) then
-                Stdout.line!("Input:\n${input_text_block}\n\nThen: ${output_text}")
+            if List.any(options, |o| o == PrintHelp) then
+                print_help!({})
             else
-                last_output = List.last(transformations) |> Result.map_ok(|ok_lines| Str.join_with(ok_lines, "\n"))
-                when last_output is
-                    Ok(text) ->
-                        Stdout.line!(text)
+                dbg options
+                { input, transformations } = List.walk_try(
+                    actions,
+                    { input: lines, transformations: [] },
+                    |state, action|
+                        output = state.input |> apply_action(action)
+                        Ok(
+                            {
+                                input: output,
+                                transformations: state.transformations |> List.append(output),
+                            },
+                        ),
+                )?
 
-                    Err(_) ->
-                        Stdout.line!("")
+                output_text_blocks = List.map(transformations, |trans| Str.join_with(trans, "\n"))
+                action_and_text = List.map2(
+                    actions,
+                    output_text_blocks,
+                    |action, text|
+                        action_text = action_to_text(action)
+                        "${action_text}:\n${text}",
+                )
+                input_text_block = Str.join_with(lines, "\n")
+                output_text = Str.join_with(action_and_text, "\n\nThen: ")
+
+                if List.any(options, |o| o == StepDebug) then
+                    Stdout.line!("Input:\n${input_text_block}\n\nThen: ${output_text}")
+                else
+                    last_output = List.last(transformations) |> Result.map_ok(|ok_lines| Str.join_with(ok_lines, "\n"))
+                    when last_output is
+                        Ok(text) ->
+                            Stdout.line!(text)
+
+                        Err(_) ->
+                            Stdout.line!("")
+
+print_help! : {} => _
+print_help! = |{}|
+    help_text =
+        available_actions
+        |> List.map(
+            |a|
+                name = a.name
+                help = a.help
+                "${name}\n    ${help}",
+        )
+        |> Str.join_with("\n\n")
+
+    Stdout.line!("Help!\n\nAvailable actions:\n\n${help_text}")
 
 action_to_text : Action -> Str
 action_to_text = |action| Inspect.to_str(action)
@@ -233,7 +250,7 @@ read_utf8_input! = |{}|
     input = Stdin.read_to_end!({})?
     Str.from_utf8(input)
 
-Config : [StepDebug]
+Config : [StepDebug, PrintHelp]
 
 parse_args : List Str -> Result { actions : List Action, options : List Config } [InvalidAction Str, InvalidConfig Str]
 parse_args = |args|
@@ -257,6 +274,11 @@ parse_config_args = |args_str|
         ["--debug", .. as rest] ->
             (parse_config_args rest)?
             |> List.append StepDebug
+            |> Ok
+
+        ["--help", .. as rest] ->
+            (parse_config_args rest)?
+            |> List.append PrintHelp
             |> Ok
 
         [other, ..] ->
@@ -299,56 +321,96 @@ Action : [
 
 PythonListIndex : { start : [Start, FromLeft U32, FromRight U32], end : [End, FromLeft U32, FromRight U32] }
 
+AvailableAction : { name : Str, help : Str, parse_args : List Str -> Result Action [InvalidAction Str] }
+
+available_actions : List AvailableAction
+available_actions = [
+    {
+        name: "keep-rows",
+        help: "Keeps rows, like 'keep-rows 5' filter to show only row 5, or 'keep-rows 5:10' keeps rows 5-10",
+        parse_args: parse_keep_rows,
+    },
+    {
+        name: "dup",
+        help: "Duplicate rows",
+        parse_args: |_| Ok(Dup),
+    },
+    {
+        name: "keep-cols",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-cols"))
+                Ok(python_list_index) -> parse_python_list_index(python_list_index) |> Result.map_ok(|index| KeepCols index),
+    },
+    { name: "trim", help: "", parse_args: |_| Ok(Trim) },
+    { name: "sort", help: "", parse_args: |_| Ok(Sort) },
+    { name: "uniq", help: "", parse_args: |_| Ok(Uniq) },
+    {
+        name: "split",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for split"))
+                Ok(split_on) -> Ok(Split split_on),
+    },
+    {
+        name: "grep",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for grep"))
+                Ok(grep) -> Ok(Grep grep),
+    },
+    {
+        name: "strip-left",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-left"))
+                Ok(strip_str) -> Ok(StripLeft strip_str),
+    },
+    {
+        name: "strip-right",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-right"))
+                Ok(strip_str) -> Ok(StripRight strip_str),
+    },
+    {
+        name: "col-append",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-append"))
+                Ok(append_str) -> Ok(ColAppend append_str),
+    },
+    {
+        name: "col-prepend",
+        help: "",
+        parse_args: |kw_args|
+            when kw_args |> List.first is
+                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-prepend"))
+                Ok(prepend_str) -> Ok(ColPrepend prepend_str),
+    },
+]
+
+parse_keep_rows : List Str -> Result Action [InvalidAction Str]
+parse_keep_rows = |args|
+    when args |> List.first is
+        Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-rows"))
+        Ok(python_list_index) -> parse_python_list_index(python_list_index) |> Result.map_ok(|index| KeepRows index)
+
 parse_action : List Str -> Result Action [InvalidAction Str]
 parse_action = |args|
     keyword = args |> List.first |> Result.map_err(|_| InvalidAction "Empty")?
     kw_args = args |> List.drop_first 1
-    when keyword is
-        "keep-rows" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-rows"))
-                Ok(python_list_index) -> parse_python_list_index(python_list_index) |> Result.map_ok(|index| KeepRows index)
-
-        "keep-cols" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for keep-cols"))
-                Ok(python_list_index) -> parse_python_list_index(python_list_index) |> Result.map_ok(|index| KeepCols index)
-
-        "dup" -> Ok(Dup)
-        "trim" -> Ok(Trim)
-        "sort" -> Ok(Sort)
-        "uniq" -> Ok(Uniq)
-        "split" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for split"))
-                Ok(split_on) -> Ok(Split split_on)
-
-        "grep" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for grep"))
-                Ok(grep) -> Ok(Grep grep)
-
-        "strip-left" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-left"))
-                Ok(strip_str) -> Ok(StripLeft strip_str)
-
-        "strip-right" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for strip-right"))
-                Ok(strip_str) -> Ok(StripRight strip_str)
-
-        "col-append" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-append"))
-                Ok(append_str) -> Ok(ColAppend append_str)
-
-        "col-prepend" ->
-            when kw_args |> List.first is
-                Err(_) -> Err(InvalidAction("Expected exactly one argument for col-prepend"))
-                Ok(prepend_str) -> Ok(ColPrepend prepend_str)
-
-        _ -> Err(InvalidAction("Unknown action \"${keyword}\""))
+    action_info =
+        available_actions
+        |> List.find_first(|e| e.name == keyword)
+        |> Result.map_err(|_| InvalidAction "Unknown action \"${keyword}\"")?
+    action_info.parse_args(kw_args)
 
 parse_python_list_index : Str -> Result PythonListIndex [InvalidAction Str]
 parse_python_list_index = |input|

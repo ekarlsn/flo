@@ -1,6 +1,6 @@
-module [main3, handle_input, print_help]
+module [main3, handle_input, print_help, Action, Config]
 
-main3 : { options : List Config, actions : List Action, lines : List Str } -> Str
+main3 : { options : List Config, actions : List Action, lines : Str } -> Str
 main3 = |input|
     { options, actions, lines } = input
     if List.any(options, |o| o == PrintHelp) then
@@ -10,7 +10,7 @@ main3 = |input|
         { transformations } =
             List.walk_try(
                 actions,
-                { input: lines, transformations: [] },
+                { input: lines |> Str.split_on("\n"), transformations: [] },
                 |state, action|
                     output = state.input |> apply_action(action)
                     Ok(
@@ -30,7 +30,7 @@ main3 = |input|
                 action_text = action_to_text(action)
                 "${action_text}:\n${text}",
         )
-        input_text_block = Str.join_with(lines, "\n")
+        input_text_block = lines
         output_text = Str.join_with(action_and_text, "\n\nThen: ")
 
         if List.any(options, |o| o == StepDebug) then
@@ -226,7 +226,7 @@ apply_action_keeprows = |{ start, end }, lines|
     dbg end_index
     lines |> List.sublist({ start: start_index |> Num.int_cast, len: end_index - start_index |> Num.int_cast })
 
-handle_input : Str, List Str -> Result { options : List Config, actions : List Action, lines : List Str } [StdinErr _, BadUtf8 _, InvalidAction Str, InvalidConfig Str, NoActionProvided]
+handle_input : Str, List Str -> Result { options : List Config, actions : List Action, lines : Str } [StdinErr _, BadUtf8 _, InvalidAction Str, InvalidConfig Str, NoActionProvided]
 handle_input = |input_str, args|
     when parse_args(args) is
         Err(InvalidAction(err)) -> Err(InvalidAction(err))
@@ -234,7 +234,7 @@ handle_input = |input_str, args|
         Err(NoActionProvided) -> Err(NoActionProvided)
         Ok({ actions, options }) ->
             dbg options
-            lines = Str.split_on(input_str, "\n")
+            lines = input_str
             Ok({ options, actions, lines })
 
 Config : [StepDebug, PrintHelp]
@@ -389,14 +389,6 @@ parse_python_list_index = |input|
             { start: FromLeft int_start, end: FromLeft (int_start + 1) } |> Ok
 
         _ -> Err(InvalidAction("Unknown index format \"${input}\""))
-
-main5 = |_stdin, _arg_list|
-    "a b c\nd e f"
-
-expect main5(" a b c\nd e f  ", ["trim"]) == "a b c\nd e f"
-expect
-    result = main5("\nd e f  ", ["trim"])
-    result == "\nd e f"
 
 Action : [
     KeepRows PythonListIndex,
